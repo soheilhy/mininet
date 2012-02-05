@@ -238,6 +238,7 @@ class Mininet( object ):
             switch.setIP( sintf, sip, prefixLen )
             controller.setHostRoute( sip, cintf )
             switch.setHostRoute( cip, sintf )
+
         info( '\n' )
         info( '*** Testing control network\n' )
         while not controller.intfIsUp( cintf ):

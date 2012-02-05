@@ -6,6 +6,18 @@
 set -e
  
 # Fail on unset var usage
+
+# Location for installing mininet, and other tools.
+if [ -z $MININET_PREFIX ]; then
+    SCRIPT_DIRECTORY=`dirname $0`
+    MININET_PREFIX=`cd $SCRIPT_DIRECTORY/../.. && pwd`/
+fi
+
+echo "Using $MININET_PREFIX as mininet's install directory."
+
+# Mininet's home directory.
+MININET_HOME=$MININET_PREFIX/mininet
+
 set -o nounset
 
 # Location of CONFIG_NET_NS-enabled kernel(s)
@@ -16,17 +28,17 @@ grep Ubuntu /etc/lsb-release &> /dev/null && DIST="Ubuntu"
 
 # Kernel params
 
-if [ "$DIST" = "Debian" ]; then
-    KERNEL_NAME=2.6.33.1-mininet
-    KERNEL_HEADERS=linux-headers-${KERNEL_NAME}_${KERNEL_NAME}-10.00.Custom_i386.deb
-    KERNEL_IMAGE=linux-image-${KERNEL_NAME}_${KERNEL_NAME}-10.00.Custom_i386.deb
-elif [ "$DIST" = "Ubuntu" ]; then
+#if [ "$DIST" = "Debian" ]; then
+#    KERNEL_NAME=2.6.33.1-mininet
+#    KERNEL_HEADERS=linux-headers-${KERNEL_NAME}_${KERNEL_NAME}-10.00.Custom_i386.deb
+#    KERNEL_IMAGE=linux-image-${KERNEL_NAME}_${KERNEL_NAME}-10.00.Custom_i386.deb
+#elif [ "$DIST" = "Ubuntu" ]; then
     KERNEL_NAME=`uname -r`
     KERNEL_HEADERS=linux-headers-${KERNEL_NAME}
-else
-    echo "Install.sh currently only supports Ubuntu and Debian."
-    exit 1
-fi
+#else
+#    echo "Install.sh currently only supports Ubuntu and Debian."
+#    exit 1
+#fi
 
 echo "Detected Linux distribution: $DIST"
 
@@ -35,8 +47,9 @@ KERNEL_IMAGE_OLD=linux-image-2.6.26-2-686
 
 DRIVERS_DIR=/lib/modules/${KERNEL_NAME}/kernel/drivers/net
 
-OVS_RELEASE=v1.1.1
-OVS_DIR=~/openvswitch
+#OVS_RELEASE=v1.2.1
+OVS_RELEASE=master
+OVS_DIR=$MININET_PREFIX/openvswitch
 OVS_KMOD=openvswitch_mod.ko
 
 function kernel {
@@ -75,7 +88,7 @@ function kernel_clean {
 	sudo apt-get -y remove $KERNEL_IMAGE_OLD
 
 	#Also remove downloaded packages:
-	rm -f ~/linux-headers-* ~/linux-image-*
+	rm -f $MININET_PREFIX/linux-headers-* $MININET_PREFIX/linux-image-*
 }
 
 # Install Mininet deps
@@ -90,13 +103,13 @@ function mn_deps {
     fi
 
 	#Add sysctl parameters as noted in the INSTALL file to increase kernel limits to support larger setups:
-	sudo su -c "cat $HOME/mininet/util/sysctl_addon >> /etc/sysctl.conf"
+	sudo su -c "cat $MININET_PREFIX/mininet/util/sysctl_addon >> /etc/sysctl.conf"
 
 	#Load new sysctl settings:
 	sudo sysctl -p
     
+    pushd $MININET_HOME
     echo "Installing Mininet core"
-    pushd ~/mininet
     sudo make install
     popd
 }
@@ -110,13 +123,13 @@ function mn_deps {
 function of {
 	echo "Installing OpenFlow and its tools..."
 
-	cd ~/
+	cd $MININET_PREFIX/
 	sudo apt-get install -y git-core automake m4 pkg-config libtool make libc6-dev autoconf autotools-dev gcc
 	git clone git://openflowswitch.org/openflow.git
-	cd ~/openflow
+	cd $MININET_PREFIX/openflow
 
     # Patch controller to handle more than 16 switches
-    patch -p1 < ~/mininet/util/openflow-patches/controller.patch
+    patch -p1 < $MININET_HOME/util/openflow-patches/controller.patch
 
 	# Resume the install:
 	./boot.sh
@@ -126,13 +139,13 @@ function of {
 
 	# Install dissector:
 	sudo apt-get install -y wireshark libgtk2.0-dev
-	cd ~/openflow/utilities/wireshark_dissectors/openflow
+	cd $MININET_PREFIX/openflow/utilities/wireshark_dissectors/openflow
 	make
 	sudo make install
 
 	# Copy coloring rules: OF is white-on-blue:
 	mkdir -p ~/.wireshark
-	cp ~/mininet/util/colorfilters ~/.wireshark
+	cp $MININET_HOME/util/colorfilters ~/.wireshark
 
 	# Remove avahi-daemon, which may cause unwanted discovery packets to be sent during tests, near link status changes:
 	sudo apt-get remove -y avahi-daemon
@@ -166,12 +179,12 @@ function ovs {
     fi
 
 	#Install OVS from release
-	cd ~/
+	cd $MININET_PREFIX
 	git clone git://openvswitch.org/openvswitch
 	cd $OVS_DIR
     git checkout $OVS_RELEASE
 	./boot.sh
-    BUILDDIR=/lib/modules/${KERNEL_NAME}/build
+    BUILDDIR=/usr/src/linux-headers-${KERNEL_NAME}
     if [ ! -e $BUILDDIR ]; then
         echo "Creating build sdirectory $BUILDDIR"
         sudo mkdir -p $BUILDDIR
@@ -189,7 +202,7 @@ function nox {
 	#Install NOX deps:
 	sudo apt-get -y install autoconf automake g++ libtool python python-twisted swig  libxerces-c2-dev libssl-dev make
     if [ "$DIST" = "Debian" ]; then
-        sudo apt-get -y install libboost1.35-dev
+        sudo apt-get -y install libboost-all-dev
     elif [ "$DIST" = "Ubuntu" ]; then
         sudo apt-get -y install python-dev libboost-dev 
         sudo apt-get -y install libboost-filesystem-dev
@@ -199,9 +212,12 @@ function nox {
 	sudo apt-get install -y libsqlite3-dev python-simplejson
 
 	#Install NOX:
-	cd ~/
-	git clone git://openflowswitch.org/nox-tutorial noxcore
+	cd $MININET_PREFIX
+	git clone git://noxrepo.org/nox noxcore
 	cd noxcore
+  git checkout destiny
+
+#  patch -p1 < $MININET_HOME/util/nox-patches/ssl.patch
 
 	# With later autoconf versions this doesn't quite work:
 	./boot.sh --apps-core || true
@@ -216,10 +232,10 @@ function nox {
 	#make check
 
 	# Add NOX_CORE_DIR env var:
-	sed -i -e 's|# for examples$|&\nexport NOX_CORE_DIR=~/noxcore/build/src|' ~/.bashrc
+	sed -i -e 's|# for examples$|&\nexport NOX_CORE_DIR=$MININET_PREFIX/noxcore/build/src|' ~/.bashrc
 
 	# To verify this install:
-	#cd ~/noxcore/build/src
+	#cd $MININET_PREFIX/noxcore/build/src
     #./nox_core -v -i ptcp:
 }
 
@@ -228,10 +244,10 @@ function oftest {
     echo "Installing oftest..."
 
     #Install deps:
-    sudo apt-get install -y tcpdump python-scapy
+    sudo apt-get install -y tcpdump python-scapy pylint
 
     #Install oftest:
-    cd ~/
+    cd $MININET_PREFIX
     git clone git://openflow.org/oftest
     cd oftest
     cd tools/munger
@@ -243,12 +259,12 @@ function cbench {
     echo "Installing cbench..."
     
     sudo apt-get install -y libsnmp-dev libpcap-dev
-    cd ~/
+    cd $MININET_PREFIX
     git clone git://openflow.org/oflops.git
     cd oflops
     sh boot.sh || true # possible error in autoreconf, so run twice
     sh boot.sh
-    ./configure --with-openflow-src-dir=$HOME/openflow
+    ./configure --with-openflow-src-dir=$MININET_PREFIX/openflow
     make
     sudo make install || true # make install fails; force past this
 }
@@ -280,7 +296,7 @@ function other {
     fi
 
     # Clean unneeded debs:
-    rm -f ~/linux-headers-* ~/linux-image-*
+    rm -f $MININET_PREFIX/linux-headers-* $MININET_PREFIX/linux-image-*
 }
 
 # Script to copy built OVS kernel module to where modprobe will
@@ -293,7 +309,7 @@ function other {
 function modprobe {
 	echo "Setting up modprobe for OVS kmod..."
 
-	sudo cp $OVS_DIR/datapath/linux-2.6/$OVS_KMOD $DRIVERS_DIR
+	sudo cp $OVS_DIR/datapath/linux/$OVS_KMOD $DRIVERS_DIR
 	sudo depmod -a ${KERNEL_NAME}
 }
 
@@ -301,7 +317,8 @@ function all {
 	echo "Running all commands..."
     if [ "$DIST" != "Ubuntu" ]; then
         # Ubuntu ships with Mininet-compatible kernel
-        kernel
+        #echo kernel
+        sudo apt-get install $KERNEL_HEADERS
     fi
 	mn_deps
 	of

@@ -578,42 +578,56 @@ class OVSKernelSwitch( Switch ):
     @staticmethod
     def setup():
         "Ensure any dependencies are loaded; if not, try to load them."
-        pathCheck( 'ovs-dpctl', 'ovs-openflowd',
+        pathCheck( 'ovs-dpctl', 'ovs-vswitchd', 'ovsdb-server',
             moduleName='Open vSwitch (openvswitch.org)')
         moduleDeps( subtract=OF_KMOD, add=OVS_KMOD )
 
     def start( self, controllers ):
         "Start up kernel datapath."
-        ofplog = '/tmp/' + self.name + '-ofp.log'
         quietRun( 'ifconfig lo up' )
-        # Delete local datapath if it exists;
+
+        ovsDbConf = '/var/run/ovsdb.conf'
+        quietRun( 'ovsdb-tool create ' + ovsDbConf )
+        ovsdbUnixSocket = '/var/run/ovsdb-server'
+        self.cmd( 'ovsdb-server --detach ' + ovsDbConf + ' --remote=punix:' +\
+                  ovsdbUnixSocket )
+        self.cmd( 'ovs-vswitchd --detach unix:' + ovsdbUnixSocket )
+
+        # Delete local bridge if it exists;
         # then create a new one monitoring the given interfaces
         quietRun( 'ovs-dpctl del-dp ' + self.dp )
-        self.cmd( 'ovs-dpctl add-dp ' + self.dp )
-        mac_str = ''
-        if self.defaultMAC:
-            # ovs-openflowd expects a string of exactly 16 hex digits with no
-            # colons.
-            mac_str = ' --datapath-id=0000' + \
-                      ''.join( self.defaultMAC.split( ':' ) ) + ' '
+        self.cmd( 'ovs-dpctl', 'add-dp', self.dp )
+
         ports = sorted( self.ports.values() )
+        # Adding the ports.
         if len( ports ) != ports[ -1 ] + 1 - self.portBase:
             raise Exception( 'only contiguous, one-indexed port ranges '
                             'supported: %s' % self.intfs )
+
         intfs = [ self.intfs[ port ] for port in ports ]
         self.cmd( 'ovs-dpctl', 'add-if', self.dp, ' '.join( intfs ) )
+
+        quietRun( 'ovs-vsctl --db=unix:' + ovsdbUnixSocket + ' del-br ' +\
+                  self.dp )
+        self.cmd( 'ovs-vsctl --db=unix:' + ovsdbUnixSocket + ' add-br ' +\
+                  self.dp )
+
+        for intf in intfs:
+          self.cmd( 'ovs-vsctl --db=unix:' + ovsdbUnixSocket +\
+                    ' add-port dp0 ' + intf)
+
         # Run protocol daemon
         controller = controllers[ 0 ]
-        self.cmd( 'ovs-openflowd ' + self.dp +
-            ' tcp:%s:%d' % ( controller.IP(), controller.port ) +
-            ' --fail=secure ' + self.opts + mac_str +
-            ' 1>' + ofplog + ' 2>' + ofplog + '&' )
+        self.cmd( 'ovs-vsctl', '--db=unix:' + ovsdbUnixSocket,\
+                  'set-controller', self.dp,\
+                  ' tcp:%s:%d' % ( controller.IP(), controller.port ))
         self.execed = False
 
     def stop( self ):
         "Terminate kernel datapath."
         quietRun( 'ovs-dpctl del-dp ' + self.dp )
-        self.cmd( 'kill %ovs-openflowd' )
+        self.cmd( 'killall ovs-vswitchd' )
+        self.cmd( 'killall ovsdb-server' )
         self.deleteIntfs()
 
 
