@@ -203,7 +203,7 @@ function nox {
 	git clone git://noxrepo.org/nox noxcore
 	cd noxcore
   git checkout destiny
-  #TODO(soheil): Add the nox patch here.
+  patch -p1 < ~/mininet/util/nox-patches/nox.patch
 
 	# With later autoconf versions this doesn't quite work:
 	./boot.sh --apps-core || true
