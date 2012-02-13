@@ -35,7 +35,7 @@ KERNEL_IMAGE_OLD=linux-image-2.6.26-2-686
 
 DRIVERS_DIR=/lib/modules/${KERNEL_NAME}/kernel/drivers/net
 
-OVS_RELEASE=v1.1.1
+OVS_RELEASE=master
 OVS_DIR=~/openvswitch
 OVS_KMOD=openvswitch_mod.ko
 
@@ -115,8 +115,8 @@ function of {
 	git clone git://openflowswitch.org/openflow.git
 	cd ~/openflow
 
-    # Patch controller to handle more than 16 switches
-    patch -p1 < ~/mininet/util/openflow-patches/controller.patch
+  # Patch controller to handle more than 16 switches
+  patch -p1 < ~/mininet/util/openflow-patches/controller.patch
 
 	# Resume the install:
 	./boot.sh
@@ -138,11 +138,11 @@ function of {
 	sudo apt-get remove -y avahi-daemon
 
 	# Disable IPv6.  Add to /etc/modprobe.d/blacklist:
-    if [ "$DIST" = "Ubuntu" ]; then
-        BLACKLIST=/etc/modprobe.d/blacklist.conf
-    else
-        BLACKLIST=/etc/modprobe.d/blacklist
-    fi
+  if [ "$DIST" = "Ubuntu" ]; then
+      BLACKLIST=/etc/modprobe.d/blacklist.conf
+  else
+      BLACKLIST=/etc/modprobe.d/blacklist
+  fi
 	sudo sh -c "echo 'blacklist net-pf-10\nblacklist ipv6' >> $BLACKLIST"
 }
 
@@ -171,12 +171,12 @@ function ovs {
 	cd $OVS_DIR
     git checkout $OVS_RELEASE
 	./boot.sh
-    BUILDDIR=/lib/modules/${KERNEL_NAME}/build
-    if [ ! -e $BUILDDIR ]; then
-        echo "Creating build sdirectory $BUILDDIR"
-        sudo mkdir -p $BUILDDIR
-    fi
-    opts="--with-l26=$BUILDDIR"
+  BUILDDIR=/usr/src/linux-headers-${KERNEL_NAME}
+  if [ ! -e $BUILDDIR ]; then
+      echo "Creating build sdirectory $BUILDDIR"
+      sudo mkdir -p $BUILDDIR
+  fi
+  opts="--with-l26=$BUILDDIR"
 	./configure $opts
 	make
 	sudo make install
@@ -200,8 +200,10 @@ function nox {
 
 	#Install NOX:
 	cd ~/
-	git clone git://openflowswitch.org/nox-tutorial noxcore
+	git clone git://noxrepo.org/nox noxcore
 	cd noxcore
+  git checkout destiny
+  #TODO(soheil): Add the nox patch here.
 
 	# With later autoconf versions this doesn't quite work:
 	./boot.sh --apps-core || true
@@ -228,7 +230,7 @@ function oftest {
     echo "Installing oftest..."
 
     #Install deps:
-    sudo apt-get install -y tcpdump python-scapy
+    sudo apt-get install -y tcpdump python-scapy pylint
 
     #Install oftest:
     cd ~/
@@ -293,7 +295,7 @@ function other {
 function modprobe {
 	echo "Setting up modprobe for OVS kmod..."
 
-	sudo cp $OVS_DIR/datapath/linux-2.6/$OVS_KMOD $DRIVERS_DIR
+	sudo cp $OVS_DIR/datapath/linux/$OVS_KMOD $DRIVERS_DIR
 	sudo depmod -a ${KERNEL_NAME}
 }
 
@@ -306,7 +308,7 @@ function all {
 	mn_deps
 	of
 	ovs
-    modprobe
+  modprobe
 	nox
 	oftest
 	cbench
