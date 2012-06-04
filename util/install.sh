@@ -5,12 +5,15 @@
 
 # Fail on error
 set -e
- 
+set -x
+
 # Fail on unset var usage
 set -o nounset
 
 # Location of CONFIG_NET_NS-enabled kernel(s)
 KERNEL_LOC=http://www.openflow.org/downloads/mininet
+MN_PREFIX="/srv/local/of/"
+
 
 # Attempt to identify Linux release
 
@@ -72,7 +75,7 @@ OVS_RELEASE=1.4.0
 OVS_PACKAGE_LOC=https://github.com/downloads/mininet/mininet
 OVS_BUILDSUFFIX=-2
 OVS_PACKAGE_NAME=ovs-$OVS_RELEASE-core-$DIST_LC-$RELEASE-$ARCH$OVS_BUILDSUFFIX.tar
-OVS_SRC=~/openvswitch
+OVS_SRC=$MN_PREFIX/openvswitch
 OVS_TAG=v$OVS_RELEASE
 OVS_BUILD=$OVS_SRC/build-$KERNEL_NAME
 OVS_KMODS=($OVS_BUILD/datapath/linux/{openvswitch_mod.ko,brcompat_mod.ko})
@@ -116,7 +119,7 @@ function kernel_clean {
     fi
 
     # Also remove downloaded packages:
-    rm -f ~/linux-headers-* ~/linux-image-*
+    rm -f $MN_PREFIX/linux-headers-* $MN_PREFIX/linux-image-*
 }
 
 # Install Mininet deps
@@ -132,13 +135,13 @@ function mn_deps {
 
     # Add sysctl parameters as noted in the INSTALL file to increase kernel 
     # limits to support larger setups:
-    sudo su -c "cat $HOME/mininet/util/sysctl_addon >> /etc/sysctl.conf"
+    sudo su -c "cat $MN_PREFIX/mininet/util/sysctl_addon >> /etc/sysctl.conf"
 
     # Load new sysctl settings:
     sudo sysctl -p
     
     echo "Installing Mininet core"
-    pushd ~/mininet
+    pushd $MN_PREFIX/mininet
     sudo make install
     popd
 }
@@ -151,14 +154,14 @@ function mn_deps {
 # ... modified to use Debian Lenny rather than unstable.
 function of {
     echo "Installing OpenFlow and OpenFlow WireShark dissector..."
-    cd ~/
+    cd $MN_PREFIX/
     $install git-core autoconf automake autotools-dev pkg-config \
 		make gcc libtool libc6-dev 
     git clone git://openflowswitch.org/openflow.git
-    cd ~/openflow
+    cd $MN_PREFIX/openflow
 
     # Patch controller to handle more than 16 switches
-    patch -p1 < ~/mininet/util/openflow-patches/controller.patch
+    patch -p1 < $MN_PREFIX/mininet/util/openflow-patches/controller.patch
 
     # Resume the install:
     ./boot.sh
@@ -168,7 +171,7 @@ function of {
 
     # Install dissector:
     $install wireshark libgtk2.0-dev
-    cd ~/openflow/utilities/wireshark_dissectors/openflow
+    cd $MN_PREFIX/openflow/utilities/wireshark_dissectors/openflow
     make
     sudo make install
 
@@ -183,7 +186,7 @@ function of {
 
     # Copy coloring rules: OF is white-on-blue:
     mkdir -p ~/.wireshark
-    cp ~/mininet/util/colorfilters ~/.wireshark
+    cp $MN_PREFIX/mininet/util/colorfilters ~/.wireshark
 
     # Remove avahi-daemon, which may cause unwanted discovery packets to be 
     # sent during tests, near link status changes:
@@ -196,7 +199,7 @@ function of {
         BLACKLIST=/etc/modprobe.d/blacklist
     fi
     sudo sh -c "echo 'blacklist net-pf-10\nblacklist ipv6' >> $BLACKLIST"
-    cd ~
+    cd $MN_PREFIX
 }
 
 function ovs_disable_controller {
@@ -235,7 +238,7 @@ function ovs {
         done
         ovs_disable_controller
         echo "Done (hopefully) installing packages"
-        cd ~
+        cd $MN_PREFIX
         return
     fi
 
@@ -264,7 +267,7 @@ function ovs {
     fi    
 
     # Install OVS from release
-    cd ~/
+    cd $MN_PREFIX/
     git clone git://openvswitch.org/openvswitch $OVS_SRC
     cd $OVS_SRC
     git checkout $OVS_TAG
@@ -324,14 +327,14 @@ function nox {
     $install libsqlite3-dev python-simplejson
 
     # Fetch NOX destiny
-    cd ~/
+    cd $MN_PREFIX/
     git clone git://noxrepo.org/nox noxcore
     cd noxcore
     git checkout -b destiny remotes/origin/destiny
 
     # Apply patches
     git checkout -b tutorial-destiny
-    git am ~/mininet/util/nox-patches/*.patch
+    git am $MN_PREFIX/mininet/util/nox-patches/*.patch
 
     # Build
     ./boot.sh
@@ -342,10 +345,10 @@ function nox {
     #make check
 
     # Add NOX_CORE_DIR env var:
-    sed -i -e 's|# for examples$|&\nexport NOX_CORE_DIR=~/noxcore/build/src|' ~/.bashrc
+    sed -i -e 's|# for examples$|&\nexport NOX_CORE_DIR=$MN_PREFIX/noxcore/build/src|' ~/.bashrc
 
     # To verify this install:
-    #cd ~/noxcore/build/src
+    #cd $MN_PREFIX/noxcore/build/src
     #./nox_core -v -i ptcp:
 }
 
@@ -357,8 +360,8 @@ function oftest {
     $install tcpdump python-scapy
 
     # Install oftest:
-    cd ~/
-    git clone git://openflow.org/oftest
+    cd $MN_PREFIX/
+    git clone https://github.com/floodlight/oftest.git
     cd oftest
     cd tools/munger
     sudo make install
@@ -368,13 +371,13 @@ function oftest {
 function cbench {
     echo "Installing cbench..."
     
-    $install libsnmp-dev libpcap-dev
-    cd ~/
+    $install libsnmp-dev libpcap-dev libconfig-dev
+    cd $MN_PREFIX/
     git clone git://openflow.org/oflops.git
     cd oflops
     sh boot.sh || true # possible error in autoreconf, so run twice
     sh boot.sh
-    ./configure --with-openflow-src-dir=$HOME/openflow
+    ./configure --with-openflow-src-dir=$MN_PREFIX/openflow
     make
     sudo make install || true # make install fails; force past this
 }
@@ -406,7 +409,7 @@ function other {
     fi
 
     # Clean unneeded debs:
-    rm -f ~/linux-headers-* ~/linux-image-*
+    rm -f $MN_PREFIX/linux-headers-* $MN_PREFIX/linux-image-*
 }
 
 # Script to copy built OVS kernel module to where modprobe will
@@ -429,7 +432,7 @@ function all {
     mn_deps
     of
     ovs
-    nox
+    #nox
     oftest
     cbench
     other
